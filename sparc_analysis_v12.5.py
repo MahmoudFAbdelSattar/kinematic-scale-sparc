@@ -2,18 +2,23 @@
 # -*- coding: utf-8 -*-
 """
 ===============================================================================
-SPARC DATA ANALYSIS FOR THE CAUSAL FIELD MODEL (EXACT c₀ DEFINITION)
-with Enhanced Physical Cuts, Cross-Validation, and Tautology Test (v12.5)
+SPARC DATA ANALYSIS FOR THE DIMENSIONLESS FIELD FRAMEWORK
+(EXACT c₀ DEFINITION)
+with Enhanced Physical Cuts, Cross-Validation, and Tautology Test (v13.0)
 ===============================================================================
 
 This module performs a complete analysis of the SPARC galaxy sample using
-the EXACT definition of the characteristic speed:
+the EXACT operational definition of the characteristic kinematic scale:
     c₀ = v_bar / sqrt(e^{2φ} - 1) = v_obs * e^{-φ} / sqrt(e^{2φ} - 1)
+
+The dimensionless field φ is defined operationally from the observed
+quantities v_obs and v_bar:
+    φ = ln(v_obs / v_bar)
 
 Author  : Mahmoud F. Abdel-Sattar
 Email   : m.f.abdel-sattar@azhar.edu.eg
 Date    : 2026
-Version : 12.5 (Exact c₀, all figures, physical cuts, cross-validation,
+Version : 13.0 (Exact c₀, all figures, physical cuts, cross-validation,
                  auto LaTeX table, tautology test)
 ===============================================================================
 """
@@ -39,9 +44,9 @@ warnings.filterwarnings('ignore')
 
 class Config:
     SPARC_URL = "https://astroweb.cwru.edu/SPARC/MassModels_Lelli2016c.mrt"
-    C0_PREDICTED = 104.3          # km/s (predicted universal constant)
+    C0_PREDICTED = 104.3          # km/s (characteristic value of c₀)
     C_LIGHT = 299792.458           # km/s (speed of light in vacuum)
-    PHI_MAX = 0.429                # maximum causal field (from complete theory)
+    PHI_PLATEAU = 0.429            # plateau value of the dimensionless field
 
     MIN_V_BAR = 0.1
     MAX_PHI = 2.5
@@ -154,13 +159,14 @@ class SPARCDataFetcher:
 # CORE CALCULATIONS (EXACT c₀ DEFINITION)
 # =============================================================================
 
-class CausalFieldCalculator:
+class DimensionlessFieldCalculator:
     @staticmethod
     def baryonic_velocity(v_gas, v_disk, v_bulge):
         return np.sqrt(v_gas**2 + v_disk**2 + v_bulge**2)
 
     @staticmethod
-    def causal_field(v_obs, v_bar):
+    def dimensionless_field(v_obs, v_bar):
+        """Operational definition: φ = ln(v_obs / v_bar)."""
         if v_obs <= v_bar or v_bar <= 0:
             return np.nan
         return np.log(v_obs / v_bar)
@@ -232,11 +238,11 @@ class ErrorEstimator:
         sorted_points = sorted(data_points, key=lambda x: x['radius'])
         v_obs_vals, v_bar_vals = [], []
         for point in sorted_points:
-            v_bar = CausalFieldCalculator.baryonic_velocity(
+            v_bar = DimensionlessFieldCalculator.baryonic_velocity(
                 point['v_gas'], point['v_disk'], point['v_bulge'])
             if v_bar < Config.MIN_V_BAR:
                 continue
-            phi = CausalFieldCalculator.causal_field(point['v_obs'], v_bar)
+            phi = DimensionlessFieldCalculator.dimensionless_field(point['v_obs'], v_bar)
             if np.isfinite(phi) and phi <= Config.MAX_PHI:
                 v_obs_vals.append(point['v_obs'])
                 v_bar_vals.append(v_bar)
@@ -272,7 +278,7 @@ class ErrorEstimator:
 
 class GalaxyAnalyzer:
     def __init__(self, error_estimator=None):
-        self.calculator = CausalFieldCalculator()
+        self.calculator = DimensionlessFieldCalculator()
         self.error_estimator = error_estimator
         self.all_c0 = []
         self.all_phi = []
@@ -299,7 +305,7 @@ class GalaxyAnalyzer:
             v_bar = self.calculator.baryonic_velocity(point['v_gas'], point['v_disk'], point['v_bulge'])
             if v_bar < Config.MIN_V_BAR:
                 continue
-            phi = self.calculator.causal_field(point['v_obs'], v_bar)
+            phi = self.calculator.dimensionless_field(point['v_obs'], v_bar)
             if not np.isfinite(phi) or phi > Config.MAX_PHI:
                 continue
             c0 = self.calculator.characteristic_speed_corrected(point['v_obs'], phi)
@@ -395,7 +401,7 @@ class StatisticalAnalyzer:
             'mean': np.mean(boot_means), 'std': np.std(boot_means),
             'ci_low': np.percentile(boot_means, 100*alpha/2),
             'ci_high': np.percentile(boot_means, 100*(1-alpha/2)),
-            'contains_predicted': (np.percentile(boot_means, 100*alpha/2) <= Config.C0_PREDICTED <= np.percentile(boot_means, 100*(1-alpha/2)))
+            'contains_characteristic': (np.percentile(boot_means, 100*alpha/2) <= Config.C0_PREDICTED <= np.percentile(boot_means, 100*(1-alpha/2)))
         }
 
     def t_test(self, data):
@@ -678,7 +684,7 @@ class PhysicalCutsAnalyzer:
         print("="*70)
         results = {}
         bins = [(0, 2, "Inner (R<2)"), (2, 10, "Mid (2-10)"), 
-                (10, 100, "Outer (R>10)"), (2, 100, "Saturated (R>2)")]
+                (10, 100, "Outer (R>10)"), (2, 100, "High-φ (R>2)")]
         for low, high, label in bins:
             mask = (self.df['radius'] >= low) & (self.df['radius'] < high)
             c0_cut = self.df['c0'][mask]
@@ -699,10 +705,10 @@ class PhysicalCutsAnalyzer:
     
     def cut_by_phi(self):
         print("\n" + "="*70)
-        print("PHYSICAL CUT: Causal Field φ")
+        print("PHYSICAL CUT: Dimensionless Field φ")
         print("="*70)
         results = {}
-        thresholds = [(0.0, 0.2, "φ < 0.2"), (0.2, 1.0, "φ > 0.2 (Saturated)"),
+        thresholds = [(0.0, 0.2, "φ < 0.2"), (0.2, 1.0, "φ > 0.2 (High-φ)"),
                       (0.3, 1.0, "φ > 0.3")]
         for low, high, label in thresholds:
             mask = (self.df['phi'] >= low) & (self.df['phi'] < high)
@@ -748,9 +754,10 @@ class PhysicalCutsAnalyzer:
                   f"CI=[{stats_['ci_low']:.1f},{stats_['ci_high']:.1f}], p={p:.4f}")
         print("\n  NOTE: The decrease in mean c₀ with tighter error cuts arises")
         print("  because points with small absolute errors preferentially come")
-        print("  from low-φ (inner) regions or dwarf galaxies, where the causal")
-        print("  field has not saturated. This is a physical selection effect,")
-        print("  not a failure of the model.")
+        print("  from low-φ (inner) regions or dwarf galaxies, where the")
+        print("  dimensionless field has not reached its plateau value. This")
+        print("  is a physical selection effect, not a failure of the")
+        print("  empirical description.")
         return results
     
     def cross_validation(self, n_iter=1000, train_frac=0.8):
@@ -827,7 +834,7 @@ class PhysicalCutsAnalyzer:
         lines.append(r"\hline")
         
         for label, res in self._radius_results.items():
-            if 'Inner' in label or 'Saturated' in label:
+            if 'Inner' in label or 'High-φ' in label or 'Saturated' in label:
                 lines.append(
                     f"{label} & {res['N']} & {res['retention']:.1f}\\% & "
                     f"${res['mean']:.1f} \\pm {res['std']:.1f}$ & "
@@ -836,7 +843,7 @@ class PhysicalCutsAnalyzer:
                 )
         
         lines.append(r"\hline")
-        lines.append(r"\multicolumn{6}{c}{Causal field $\phi$} \\")
+        lines.append(r"\multicolumn{6}{c}{Dimensionless field $\phi$} \\")
         lines.append(r"\hline")
         
         for label, res in self._phi_results.items():
@@ -892,7 +899,7 @@ class PhysicalCutsAnalyzer:
 
 class TautologyTest:
     """
-    Tests whether the constancy of c₀ is a mathematical artefact of its
+    Tests whether the stability of c₀ is a mathematical artefact of its
     definition by applying the same analysis to synthetic datasets.
     """
     
@@ -958,7 +965,7 @@ class TautologyTest:
         phi_dark = np.where(v_obs_dark > self.df_real['v_bar'].values,
                             np.log(v_obs_dark / self.df_real['v_bar'].values),
                             np.nan)
-        c0_dark = CausalFieldCalculator.characteristic_speed_corrected(v_obs_dark, phi_dark)
+        c0_dark = DimensionlessFieldCalculator.characteristic_speed_corrected(v_obs_dark, phi_dark)
         c0_dark = c0_dark[np.isfinite(c0_dark)]
         self.results['Dark-halo'] = self._stats(c0_dark)
         r = self.results['Dark-halo']
@@ -969,7 +976,7 @@ class TautologyTest:
         phi_mond = np.where(v_obs_mond > self.df_real['v_bar'].values,
                             np.log(v_obs_mond / self.df_real['v_bar'].values),
                             np.nan)
-        c0_mond = CausalFieldCalculator.characteristic_speed_corrected(v_obs_mond, phi_mond)
+        c0_mond = DimensionlessFieldCalculator.characteristic_speed_corrected(v_obs_mond, phi_mond)
         c0_mond = c0_mond[np.isfinite(c0_mond)]
         self.results['MOND'] = self._stats(c0_mond)
         r = self.results['MOND']
@@ -980,7 +987,7 @@ class TautologyTest:
         phi_rand = np.where(v_obs_rand > self.df_real['v_bar'].values,
                             np.log(v_obs_rand / self.df_real['v_bar'].values),
                             np.nan)
-        c0_rand = CausalFieldCalculator.characteristic_speed_corrected(v_obs_rand, phi_rand)
+        c0_rand = DimensionlessFieldCalculator.characteristic_speed_corrected(v_obs_rand, phi_rand)
         c0_rand = c0_rand[np.isfinite(c0_rand)]
         self.results['Randomised'] = self._stats(c0_rand)
         r = self.results['Randomised']
@@ -1012,7 +1019,7 @@ class TautologyTest:
             phi_syn = np.where(v_obs_syn > self.df_real['v_bar'].values,
                                np.log(v_obs_syn / self.df_real['v_bar'].values),
                                np.nan)
-            c0_syn = CausalFieldCalculator.characteristic_speed_corrected(v_obs_syn, phi_syn)
+            c0_syn = DimensionlessFieldCalculator.characteristic_speed_corrected(v_obs_syn, phi_syn)
             c0_syn = c0_syn[np.isfinite(c0_syn)]
             c0_cut_syn = self._apply_cut(c0_syn)
             if len(c0_cut_syn) > 10:
@@ -1049,7 +1056,7 @@ class MainVisualizer:
         full = self.results['full']
         full_means = np.random.normal(full['bootstrap']['mean'], full['bootstrap']['std'], 10000)
         ax1.hist(full_means, bins=50, alpha=0.7, color='steelblue', density=True)
-        ax1.axvline(Config.C0_PREDICTED, color='red', linestyle='--', label=f'Predicted {Config.C0_PREDICTED}')
+        ax1.axvline(Config.C0_PREDICTED, color='red', linestyle='--', label=f'Characteristic {Config.C0_PREDICTED}')
         ax1.axvline(full['bootstrap']['mean'], color='black', linestyle='-', label=f'Mean {full["bootstrap"]["mean"]:.1f}')
         ax1.axvspan(full['bootstrap']['ci_low'], full['bootstrap']['ci_high'], alpha=0.2, color='gray')
         ax1.set_xlabel('c₀ [km/s]'); ax1.set_ylabel('Density'); ax1.set_title(f'(a) Full sample N={full["n_points"]}')
@@ -1057,7 +1064,7 @@ class MainVisualizer:
         clean = self.results['clean']
         clean_means = np.random.normal(clean['bootstrap']['mean'], clean['bootstrap']['std'], 10000)
         ax2.hist(clean_means, bins=50, alpha=0.7, color='darkgreen', density=True)
-        ax2.axvline(Config.C0_PREDICTED, color='red', linestyle='--', label=f'Predicted {Config.C0_PREDICTED}')
+        ax2.axvline(Config.C0_PREDICTED, color='red', linestyle='--', label=f'Characteristic {Config.C0_PREDICTED}')
         ax2.axvline(clean['bootstrap']['mean'], color='black', linestyle='-', label=f'Mean {clean["bootstrap"]["mean"]:.1f}')
         ax2.axvspan(clean['bootstrap']['ci_low'], clean['bootstrap']['ci_high'], alpha=0.2, color='gray')
         ax2.set_xlabel('c₀ [km/s]'); ax2.set_ylabel('Density'); ax2.set_title(f'(b) Clean sample (50-200) N={clean["n_points"]}')
@@ -1074,7 +1081,7 @@ class MainVisualizer:
         ci_low = [cuts[n]['bootstrap']['ci_low'] for n in names]
         ci_high = [cuts[n]['bootstrap']['ci_high'] for n in names]
         ax1.errorbar(x, means, yerr=[[m-l for m,l in zip(means,ci_low)], [h-m for m,h in zip(means,ci_high)]], fmt='o', capsize=5, color='steelblue')
-        ax1.axhline(Config.C0_PREDICTED, color='red', linestyle='--', label=f'Predicted {Config.C0_PREDICTED}')
+        ax1.axhline(Config.C0_PREDICTED, color='red', linestyle='--', label=f'Characteristic {Config.C0_PREDICTED}')
         ax1.set_xticks(x); ax1.set_xticklabels(names, rotation=45); ax1.set_ylabel('Mean c₀ [km/s]'); ax1.set_title('(a) Mean c₀ with 95% CI')
         ax1.legend(); ax1.grid(True, alpha=0.3)
         pvals = [cuts[n]['t_test']['p_value'] for n in names]; ret = [cuts[n]['retention'] for n in names]
@@ -1113,7 +1120,7 @@ class MainVisualizer:
         h = ax.hist2d(self.analyzer.all_vbar, self.analyzer.all_phi, bins=(60, 40), cmap='plasma', norm='log')
         plt.colorbar(h[3], ax=ax, label='Number of points')
         v_range = np.linspace(0, 300, 100)
-        ax.plot(v_range, 0.5*np.log(1 + (v_range/Config.C0_PREDICTED)**2), 'r-', linewidth=3, label='Theoretical')
+        ax.plot(v_range, 0.5*np.log(1 + (v_range/Config.C0_PREDICTED)**2), 'r-', linewidth=3, label='Empirical relation')
         ax.set_xlabel(r'$v_{\rm bar}$ [km s$^{-1}$]'); ax.set_ylabel(r'$\phi$')
         ax.legend(); ax.grid(True, alpha=0.3)
         filename = self.output_dir / 'figure_3_phi_vs_vbar.pdf'
@@ -1130,8 +1137,8 @@ class MainVisualizer:
         ax.scatter(g_N_clean, g_obs_clean, s=2, alpha=0.2, color='black', label='Clean sample')
         minv, maxv = 1e-14, 1e-8
         ax.plot([minv, maxv], [minv, maxv], 'k--', label=r'$g_{\rm obs}=g_{\rm bar}$')
-        amp = np.exp(2 * Config.PHI_MAX)
-        ax.plot([minv, maxv], [minv, amp * maxv], 'r-', linewidth=2.5, label=r'Causal: $g_{\rm obs}=%.3f\,g_{\rm bar}$' % amp)
+        amp = np.exp(2 * Config.PHI_PLATEAU)
+        ax.plot([minv, maxv], [minv, amp * maxv], 'r-', linewidth=2.5, label=r'Empirical: $g_{\rm obs}=%.3f\,g_{\rm bar}$' % amp)
         a0 = 1.2e-10
         g_N_range = np.logspace(-14, -8, 200)
         nu_mond = 0.5 + np.sqrt(0.25 + 1.0 / np.maximum(g_N_range / a0, 1e-12))
@@ -1169,7 +1176,7 @@ class SPARCCompleteAnalysisPipeline:
 
     def run(self):
         print("\n" + "="*100)
-        print("SPARC COMPLETE ANALYSIS FOR CAUSAL FIELD MODEL (EXACT c₀)")
+        print("SPARC COMPLETE ANALYSIS FOR THE DIMENSIONLESS FIELD FRAMEWORK (EXACT c₀)")
         print("="*100)
         try:
             # 1. Data
